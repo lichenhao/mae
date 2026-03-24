@@ -15,9 +15,10 @@ interface Task {
 
 interface TaskListProps {
   onTaskClick?: (taskId: string) => void
+  taskProgress?: Record<string, any>
 }
 
-export default function TaskList({ onTaskClick }: TaskListProps) {
+export default function TaskList({ onTaskClick, taskProgress = {} }: TaskListProps) {
   const { sessionId } = useParams<{ sessionId: string }>()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -164,6 +165,33 @@ export default function TaskList({ onTaskClick }: TaskListProps) {
                 {getStatusText(task.status)}
               </span>
             </div>
+
+            {/* 进度条 */}
+            {(task.status === 'IN_PROGRESS' || task.status === 'PENDING') && taskProgress[task.id] && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <div style={{
+                  height: '4px',
+                  backgroundColor: 'var(--color-bg-hover)',
+                  borderRadius: 'var(--radius-full)',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${taskProgress[task.id].progress || 0}%`,
+                    background: 'var(--gradient-primary)',
+                    borderRadius: 'var(--radius-full)',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+                <div style={{
+                  fontSize: '0.625rem',
+                  color: 'var(--color-text-muted)',
+                  marginTop: '0.25rem'
+                }}>
+                  {taskProgress[task.id].message || '处理中...'}
+                </div>
+              </div>
+            )}
 
             <div style={{
               display: 'flex',

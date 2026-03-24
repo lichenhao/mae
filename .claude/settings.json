@@ -3,7 +3,10 @@
     "allow": [
       "Read(//Users/ryota/works/**)",
       "Bash(npm run:*)",
-      "Bash(open http://localhost:3001)"
+      "Bash(open http://localhost:3001)",
+      "Bash(env)",
+      "Read(//Users/ryota/works/MultiAgentApp/**)",
+      "Bash(kill -9 21230 33796)"
     ]
   }
 }

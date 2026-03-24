@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useWebSocket } from '../hooks/useWebSocket'
+import TaskList from '../components/TaskList'
+import TaskDetailModal from '../components/TaskDetailModal'
+import FileUploadButton from '../components/FileUploadButton'
 
 interface Message {
   id: string
@@ -22,15 +25,26 @@ interface ChatSessionProps {
 }
 
 export default function ChatSession({ onLogout }: ChatSessionProps) {
+  // 附件类型
+  interface Attachment {
+    id: string
+    name: string
+    type: string
+    size: number
+  }
+
   const { sessionId } = useParams<{ sessionId: string }>()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [connected, setConnected] = useState(false)
   const [inputFocused, setInputFocused] = useState(false)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [taskProgress, setTaskProgress] = useState<Record<string, any>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
@@ -55,9 +69,18 @@ export default function ChatSession({ onLogout }: ChatSessionProps) {
     })
   }, [])
 
+  // 任务进度回调
+  const handleTaskProgress = useCallback((progress: any) => {
+    setTaskProgress(prev => ({
+      ...prev,
+      [progress.taskId]: progress
+    }))
+  }, [])
+
   const { joinSession } = useWebSocket({
     sessionId,
-    onMessage: handleNewMessage
+    onMessage: handleNewMessage,
+    onTaskProgress: handleTaskProgress
   })
 
   useEffect(() => {
@@ -112,13 +135,16 @@ export default function ChatSession({ onLogout }: ChatSessionProps) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ content: input })
+        body: JSON.stringify({
+          content: input,
+          attachmentIds: attachments.map(a => a.id)
+        })
       })
 
       if (res.ok) {
-        const message = await res.json()
-        setMessages(prev => [...prev, message])
+        // 不直接添加消息，等待 WebSocket 回调（避免重复）
         setInput('')
+        setAttachmentIds([])
       }
     } catch (err) {
       console.error('Failed to send message')
@@ -132,6 +158,16 @@ export default function ChatSession({ onLogout }: ChatSessionProps) {
       e.preventDefault()
       sendMessage()
     }
+  }
+
+  // 处理文件上传完成
+  const handleUploadComplete = (attachment: Attachment) => {
+    setAttachments(prev => [...prev, attachment])
+  }
+
+  // 移除附件
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(att => att.id !== id))
   }
 
   const handleLogout = () => {
@@ -259,6 +295,11 @@ export default function ChatSession({ onLogout }: ChatSessionProps) {
                 {session.title}
               </Link>
             ))}
+
+            {/* 任务列表 */}
+            {!sidebarCollapsed && sessionId && (
+              <TaskList onTaskClick={setSelectedTaskId} taskProgress={taskProgress} />
+            )}
           </div>
         </div>
       </aside>
@@ -378,39 +419,30 @@ export default function ChatSession({ onLogout }: ChatSessionProps) {
               padding: '0.5rem 0.75rem'
             }}>
               {/* 左侧工具按钮 */}
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                 <button
                   title="斜杠命令"
                   style={{
-                    width: '32px',
-                    height: '32px',
+                    width: '28px',
+                    height: '28px',
                     borderRadius: 'var(--radius-md)',
                     backgroundColor: 'transparent',
                     color: 'var(--color-text-secondary)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1rem'
+                    justifyContent: 'center'
                   }}
                 >
-                  /
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="19" y1="5" x2="5" y2="19" />
+                  </svg>
                 </button>
-                <button
-                  title="添加附件"
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--color-text-secondary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.25rem'
-                  }}
-                >
-                  +
-                </button>
+                <FileUploadButton
+                  sessionId={sessionId || ''}
+                  attachments={attachments}
+                  onUploadComplete={handleUploadComplete}
+                  onRemoveAttachment={handleRemoveAttachment}
+                />
               </div>
 
               {/* 右侧状态和发送 */}
@@ -453,6 +485,14 @@ export default function ChatSession({ onLogout }: ChatSessionProps) {
           </div>
         </div>
       </div>
+
+      {/* 任务详情弹窗 */}
+      {selectedTaskId && (
+        <TaskDetailModal
+          taskId={selectedTaskId}
+          onClose={() => setSelectedTaskId(null)}
+        />
+      )}
     </div>
   )
 }

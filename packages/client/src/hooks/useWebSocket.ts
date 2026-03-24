@@ -7,10 +7,11 @@ interface UseWebSocketOptions {
   onTaskCreated?: (task: any) => void
   onTaskCompleted?: (task: any) => void
   onTaskUpdate?: (task: any) => void
+  onTaskProgress?: (progress: any) => void
 }
 
 export function useWebSocket(options: UseWebSocketOptions) {
-  const { sessionId, onMessage, onTaskCreated, onTaskCompleted, onTaskUpdate } = options
+  const { sessionId, onMessage, onTaskCreated, onTaskCompleted, onTaskUpdate, onTaskProgress } = options
   const [connected, setConnected] = useState(false)
   const socketRef = useRef<Socket | null>(null)
 
@@ -49,6 +50,9 @@ export function useWebSocket(options: UseWebSocketOptions) {
     }
     if (onTaskUpdate) {
       socket.on('task_update', onTaskUpdate)
+    }
+    if (onTaskProgress) {
+      socket.on('task_progress', onTaskProgress)
     }
 
     socketRef.current = socket

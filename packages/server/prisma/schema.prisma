@@ -137,6 +137,10 @@ model Message {
   deletedAt       DateTime?
 
   replyToId       String?       // 引用消息 ID
+
+  // 附件引用（存储附件ID列表）
+  attachmentIds   String?       @db.Text  // JSON array of attachment IDs
+
   createdAt       DateTime      @default(now())
 
   // 关联
@@ -191,6 +195,7 @@ model Attachment {
   fileType     String
   fileSize     Int
   filePath     String
+  fileHash     String?      // 文件哈希，用于去重
   storageType  StorageType  @default(LOCAL)
   createdAt    DateTime     @default(now())
 
@@ -198,6 +203,7 @@ model Attachment {
   message      Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
 
   @@index([sessionId])
+  @@index([fileHash])
 }
 
 enum StorageType {

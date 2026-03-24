@@ -1,25 +1,47 @@
 import prisma from '../../config/database'
 import { analyzeInput, InputClassification, ComplexityAssessment } from '../classifier'
+import { generateCompletion, generateCompletionStream, LLMMessage } from '../../services/llm'
 import { io } from '../../index'
 
-// Secretary 提示词模板
+// Secretary 系统提示词
 const SECRETARY_SYSTEM_PROMPT = `你是用户的智能秘书（Secretary），负责：
-1. 理解用户意图
+1. 理解用户意图并分类
 2. 分析任务类型和复杂度
 3. 调度合适的 Worker 执行任务
 4. 汇总结果并回复用户
 
 工作流程：
 - 用户发送消息后，先分类（问题/需求/执行）
-- 根据分类决定处理方式
-- 问题类：直接回答或搜索后回答
+- 问题类：直接回答
 - 需求类：澄清需求，确认后执行
 - 执行类：创建任务，调度 Worker
 
-注意：
+风格要求：
 - 保持专业、友好的语气
 - 复杂任务需要分解步骤
-- 及时向用户反馈进度`
+- 及时向用户反馈进度
+- 用中文回复用户`
+
+// Worker 系统提示词
+const WORKER_SYSTEM_PROMPT = `你是一个专业的任务执行专家（Worker）。你的职责是根据用户需求执行具体任务。
+
+工作要求：
+1. 仔细分析任务需求
+2. 制定执行计划
+3. 逐步执行并记录过程
+4. 产出可交付的结果
+
+输出格式要求：
+- 清晰的结构化输出
+- 包含执行步骤和结果
+- 如遇问题，说明原因和建议`
+
+// 任务执行提示词模板
+const EXECUTION_TEMPLATE = `
+用户需求：{taskDescription}
+
+请执行这个任务，完成后返回执行结果。
+`
 
 /**
  * 处理用户消息的核心逻辑
@@ -41,12 +63,23 @@ export async function processUserMessage(
     }
   })
 
-  // 3. 根据分类类型处理
+  // 3. 记录上下文
+  await prisma.contextHistory.create({
+    data: {
+      sessionId,
+      agentId: 'SECRETARY',
+      action: 'analyze_input',
+      input: content,
+      output: JSON.stringify({ classification: analysis.classification, complexity: analysis.complexity })
+    }
+  })
+
+  // 4. 根据分类类型处理
   let responseContent: string
 
   switch (analysis.classification.type) {
     case 'QUESTION':
-      responseContent = await handleQuestion(content, analysis.classification)
+      responseContent = await handleQuestion(content)
       break
     case 'REQUIREMENT':
       responseContent = await handleRequirement(content, analysis)
@@ -55,10 +88,10 @@ export async function processUserMessage(
       responseContent = await handleExecution(content, analysis, sessionId, userMessageId)
       break
     default:
-      responseContent = '我收到了您的消息，正在处理中...'
+      responseContent = await handleDirect(content)
   }
 
-  // 4. 创建 Assistant 消息
+  // 5. 创建 Assistant 消息
   const assistantMessage = await prisma.message.create({
     data: {
       sessionId,
@@ -69,48 +102,32 @@ export async function processUserMessage(
     }
   })
 
-  // 5. 广播新消息
+  // 6. 广播新消息
   io.to(`session:${sessionId}`).emit('new_message', assistantMessage)
-
-  // 6. 记录上下文历史
-  await prisma.contextHistory.create({
-    data: {
-      sessionId,
-      agentId: 'SECRETARY', // 假设 Secretary 的 agentId
-      action: 'process_message',
-      input: content,
-      output: responseContent,
-      metadata: {
-        classification: analysis.classification,
-        complexity: analysis.complexity
-      }
-    }
-  })
 
   return assistantMessage
 }
 
 /**
- * 处理问题类请求
+ * 处理问题类请求 - 直接用 LLM 回答
  */
-async function handleQuestion(
-  content: string,
-  classification: InputClassification
-): Promise<string> {
-  // 简单模拟：根据问题内容生成回答
-  const responses: Record<string, string> = {
-    'QUESTION': `您的问题是："${content}"
+async function handleQuestion(content: string): Promise<string> {
+  const messages: LLMMessage[] = [
+    { role: 'user', content }
+  ]
 
-作为一个 AI 助手，我可以帮助您：
-- 回答各类问题
-- 编写代码
-- 设计界面
-- 分析数据
+  try {
+    const response = await generateCompletion(
+      messages,
+      SECRETARY_SYSTEM_PROMPT
+    )
+    return response.content
+  } catch (error) {
+    console.error('Error handling question:', error)
+    return `您的问题是："${content}"
 
-请告诉我您具体需要什么帮助？`
+我正在思考如何回答您的问题，请稍等...`
   }
-
-  return responses[classification.type] || '感谢您的提问，请告诉我更多细节。'
 }
 
 /**
@@ -120,26 +137,24 @@ async function handleRequirement(
   content: string,
   analysis: { classification: InputClassification; complexity: ComplexityAssessment }
 ): Promise<string> {
-  const complexityText = {
-    SIMPLE: '简单',
-    MEDIUM: '中等',
-    COMPLEX: '复杂'
+  const messages: LLMMessage[] = [
+    { role: 'user', content: `用户需求：${content}\n\n复杂度：${analysis.complexity.level}\n\n请确认需求并给出执行计划。` }
+  ]
+
+  try {
+    const response = await generateCompletion(
+      messages,
+      SECRETARY_SYSTEM_PROMPT
+    )
+    return response.content
+  } catch (error) {
+    console.error('Error handling requirement:', error)
+    return `好的，我收到了您的需求：${content}\n\n请确认这是否是您想要的，我会开始执行。`
   }
-
-  return `收到您的需求：${content}
-
-我理解这是一个${complexityText[analysis.complexity.level]}任务。
-
-为了更好地帮您完成，请确认：
-1. 您的具体目标是什么？
-2. 有没有截止时间？
-3. 有没有特定的格式或要求？
-
-请补充更多信息，我会开始为您处理。`
 }
 
 /**
- * 处理执行类请求
+ * 处理执行类请求 - 创建任务并调度 Worker
  */
 async function handleExecution(
   content: string,
@@ -154,8 +169,8 @@ async function handleExecution(
       messageId,
       taskName: extractTaskName(content),
       description: content,
-      status: 'IN_PROGRESS',
-      complexity: analysis.complexity.level,
+      status: 'PENDING',
+      complexity: analysis.complexity.level as any,
       priority: analysis.complexity.level === 'COMPLEX' ? 'HIGH' : 'MEDIUM'
     }
   })
@@ -164,55 +179,197 @@ async function handleExecution(
   io.to(`session:${sessionId}`).emit('task_created', {
     taskId: task.id,
     taskName: task.taskName,
-    status: task.status
+    status: task.status,
+    priority: task.priority
   })
 
-  // 3. 模拟 Worker 执行（这里先用模拟响应）
-  const response = await simulateWorkerExecution(task, content)
+  // 3. 返回任务创建消息给用户
+  const initialMessage = `好的，我已收到您的任务需求，正在开始执行...\n\n📋 **任务**：${task.taskName}\n📊 **复杂度**：${analysis.complexity.level}\n🔄 **状态**：等待执行中`
 
-  // 4. 更新任务状态
+  // 4. 异步开始任务执行（不阻塞响应）
+  executeTask(task.id, content, sessionId).catch(err => {
+    console.error('Task execution error:', err)
+  })
+
+  return initialMessage
+}
+
+/**
+ * 直接处理（非分类的请求）
+ */
+async function handleDirect(content: string): Promise<string> {
+  const messages: LLMMessage[] = [
+    { role: 'user', content }
+  ]
+
+  try {
+    const response = await generateCompletion(
+      messages,
+      SECRETARY_SYSTEM_PROMPT
+    )
+    return response.content
+  } catch (error) {
+    console.error('Error handling direct request:', error)
+    return '我收到了您的消息，正在处理中...'
+  }
+}
+
+/**
+ * 执行任务 - 调度 Worker
+ */
+async function executeTask(taskId: string, content: string, sessionId: string) {
+  const task = await prisma.task.findUnique({ where: { id: taskId } })
+  if (!task) return
+
+  // 1. 更新任务状态为进行中
   await prisma.task.update({
-    where: { id: task.id },
+    where: { id: taskId },
     data: {
-      status: 'COMPLETED',
-      completedAt: new Date(),
-      result: response
+      status: 'IN_PROGRESS',
+      startedAt: new Date(),
+      assignedAgentId: 'WORKER'
     }
   })
 
-  // 5. 广播任务完成
-  io.to(`session:${sessionId}`).emit('task_completed', {
-    taskId: task.id,
-    status: 'COMPLETED',
-    result: response
+  // 2. 广播任务开始执行
+  io.to(`session:${sessionId}`).emit('task_update', {
+    taskId,
+    status: 'IN_PROGRESS',
+    progress: 10
   })
 
-  return response
+  // 3. 记录开始执行
+  await prisma.contextHistory.create({
+    data: {
+      sessionId,
+      taskId,
+      agentId: 'WORKER',
+      action: 'task_started',
+      input: content,
+      output: 'Worker 开始执行任务'
+    }
+  })
+
+  try {
+    // 4. 构建 Worker 执行提示
+    const workerMessages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: EXECUTION_TEMPLATE.replace('{taskDescription}', content)
+      }
+    ]
+
+    // 5. 流式执行并收集结果
+    let fullResult = ''
+    let progress = 20
+
+    // 发送进度更新
+    io.to(`session:${sessionId}`).emit('task_progress', {
+      taskId,
+      progress,
+      status: 'executing',
+      message: '正在分析任务需求...'
+    })
+
+    // 调用 LLM 执行
+    for await (const chunk of generateCompletionStream(
+      workerMessages,
+      WORKER_SYSTEM_PROMPT
+    )) {
+      fullResult += chunk
+
+      // 每隔一段时间更新进度
+      progress = Math.min(progress + 2, 90)
+      io.to(`session:${sessionId}`).emit('task_progress', {
+        taskId,
+        progress,
+        status: 'executing',
+        message: '正在执行任务...',
+        partialResult: fullResult.slice(-200)
+      })
+    }
+
+    // 6. 创建工作产物
+    await prisma.workProduct.create({
+      data: {
+        taskId,
+        name: '执行结果',
+        type: 'TEXT',
+        content: fullResult
+      }
+    })
+
+    // 7. 更新任务完成
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+        result: fullResult
+      }
+    })
+
+    // 8. 记录完成
+    await prisma.contextHistory.create({
+      data: {
+        sessionId,
+        taskId,
+        agentId: 'WORKER',
+        action: 'task_completed',
+        input: content,
+        output: fullResult.slice(0, 500)
+      }
+    })
+
+    // 9. 广播任务完成
+    io.to(`session:${sessionId}`).emit('task_completed', {
+      taskId,
+      status: 'COMPLETED',
+      result: fullResult,
+      progress: 100
+    })
+
+    // 10. 创建 Worker 消息通知用户
+    const workerMessage = await prisma.message.create({
+      data: {
+        sessionId,
+        role: 'WORKER',
+        content: `✅ **任务已完成**\n\n${fullResult}`,
+        inputType: 'EXECUTION'
+      }
+    })
+
+    io.to(`session:${sessionId}`).emit('new_message', workerMessage)
+
+  } catch (error: any) {
+    console.error('Task execution error:', error)
+
+    // 更新任务失败状态
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        status: 'FAILED',
+        completedAt: new Date(),
+        errorMessage: error.message || '执行失败'
+      }
+    })
+
+    // 广播任务失败
+    io.to(`session:${sessionId}`).emit('task_update', {
+      taskId,
+      status: 'FAILED',
+      error: error.message
+    })
+  }
 }
 
 /**
  * 从内容中提取任务名称
  */
 function extractTaskName(content: string): string {
-  // 简单提取前20个字符作为任务名
-  const name = content.substring(0, 20)
+  // 简单提取前30个字符作为任务名
+  const name = content.substring(0, 30)
   return name.length < content.length ? `${name}...` : name
-}
-
-/**
- * 模拟 Worker 执行
- */
-async function simulateWorkerExecution(task: any, content: string): Promise<string> {
-  // 模拟处理时间
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  return `任务已完成！
-
-任务：${task.taskName}
-状态：已完成
-
-这是对您请求"${content}"的处理结果。
-具体执行会根据实际需求由相应的 Worker 完成。`
 }
 
 /**
@@ -225,7 +382,6 @@ export async function assignSecretaryToSession(sessionId: string): Promise<strin
   })
 
   if (!secretary) {
-    // 如果没有配置 Secretary，使用默认
     return 'SECRETARY'
   }
 
@@ -251,4 +407,20 @@ export async function assignSecretaryToSession(sessionId: string): Promise<strin
   })
 
   return secretary.id
+}
+
+/**
+ * 手动触发任务执行（用于测试）
+ */
+export async function runTask(taskId: string) {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { session: true }
+  })
+
+  if (!task) {
+    throw new Error('Task not found')
+  }
+
+  await executeTask(taskId, task.description || task.taskName, task.sessionId)
 }

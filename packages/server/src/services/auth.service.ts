@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken'
+import jwt, { SignOptions } from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import prisma from '../config/database'
 
@@ -7,7 +7,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
 
 // 生成 Token
 export function generateToken(userId: string): string {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' } as SignOptions)
 }
 
 // 验证 Token

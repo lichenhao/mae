@@ -10,7 +10,8 @@ const router = Router()
 // 发送消息验证 schema
 const sendMessageSchema = z.object({
   content: z.string().min(1),
-  replyToId: z.string().uuid().optional()
+  replyToId: z.string().uuid().optional(),
+  attachmentIds: z.array(z.string().uuid()).optional()
 })
 
 // 获取会话消息
@@ -74,7 +75,8 @@ router.post('/sessions/:sessionId/messages', authMiddleware, async (req: AuthReq
         sessionId: req.params.sessionId,
         role: 'USER',
         content: data.content,
-        replyToId: data.replyToId
+        replyToId: data.replyToId,
+        attachmentIds: data.attachmentIds ? JSON.stringify(data.attachmentIds) : null
       },
       include: {
         attachments: true,

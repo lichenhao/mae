@@ -8,6 +8,8 @@ import authRoutes from './routes/auth'
 import sessionRoutes from './routes/sessions'
 import messageRoutes from './routes/messages'
 import taskRoutes from './routes/tasks'
+import attachmentRoutes from './routes/attachments'
+import agentManagementRoutes from './routes/agent-management'
 
 const app = express()
 const httpServer = createServer(app)
@@ -28,6 +30,8 @@ app.use('/api/auth', authRoutes)
 app.use('/api/sessions', sessionRoutes)
 app.use('/api', messageRoutes)
 app.use('/api', taskRoutes)
+app.use('/api', attachmentRoutes)
+app.use('/api', agentManagementRoutes)
 
 // Health check
 app.get('/health', (req, res) => {
