@@ -1,0 +1,26 @@
+{
+  "name": "@multi-agent-app/root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --workspace=@multi-agent-app/server",
+    "dev:client": "npm run dev --workspace=@multi-agent-app/client",
+    "build": "npm run build --workspaces",
+    "build:server": "npm run build --workspace=@multi-agent-app/server",
+    "build:client": "npm run build --workspace=@multi-agent-app/client",
+    "db:generate": "npm run db:generate --workspace=@multi-agent-app/server",
+    "db:migrate": "npm run db:migrate --workspace=@multi-agent-app/server",
+    "db:push": "npm run db:push --workspace=@multi-agent-app/server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}

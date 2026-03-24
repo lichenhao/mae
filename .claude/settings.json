@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/ryota/works/**)",
+      "Bash(npm run:*)",
+      "Bash(open http://localhost:3001)"
+    ]
+  }
+}
