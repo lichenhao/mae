@@ -167,6 +167,7 @@ export async function processUserMessage(
 
   // 6. 根据分类类型处理
   let responseContent: string
+  let taskAnalysis: any = null
 
   switch (analysis.classification.type) {
     case 'QUESTION':
@@ -175,16 +176,22 @@ export async function processUserMessage(
     case 'REQUIREMENT':
       // 检查需求是否清晰，清晰时直接执行
       if (checkRequirementClarity(content)) {
-        // 需求清晰，直接执行
-        await handleExecution(fullContent, analysis, sessionId, userMessageId, attachmentIds)
-        responseContent = `【需求已确认，开始执行】\n\n任务：${content}\n\n复杂度：${analysis.complexity.level}\n\n正在执行中，请稍候...`
+        // 需求清晰，先分析复杂度（LLM判断），再执行
+        taskAnalysis = await analyzeTaskComplexity(content, attachmentIds)
+        console.log('[Secretary] Task complexity analysis:', taskAnalysis)
+
+        await handleExecution(fullContent, analysis, sessionId, userMessageId, attachmentIds, taskAnalysis)
+        responseContent = `【需求已确认，开始执行】\n\n任务：${content}\n\n复杂度：${taskAnalysis.estimatedComplexity}\n${taskAnalysis.needsPlanning ? '（需要进行任务规划）' : ''}\n\n正在执行中，请稍候...`
       } else {
         // 需求不清晰，询问具体内容
         responseContent = await handleRequirement(fullContent, analysis, attachmentIds)
       }
       break
     case 'EXECUTION':
-      responseContent = await handleExecution(fullContent, analysis, sessionId, userMessageId, attachmentIds)
+      // 执行类也分析复杂度
+      taskAnalysis = await analyzeTaskComplexity(content, attachmentIds)
+      console.log('[Secretary] Task complexity analysis:', taskAnalysis)
+      responseContent = await handleExecution(fullContent, analysis, sessionId, userMessageId, attachmentIds, taskAnalysis)
       break
     default:
       responseContent = await handleDirect(fullContent)
@@ -310,10 +317,13 @@ async function handleExecution(
   analysis: { classification: InputClassification; complexity: ComplexityAssessment },
   sessionId: string,
   messageId: string,
-  attachmentIds: string[] = []
+  attachmentIds: string[] = [],
+  precomputedAnalysis?: ComplexityAnalysis  // 预先分析好的复杂度（可选）
 ): Promise<string> {
-  // 1. 先让 Agent 分析任务复杂度（完全由 LLM 判断，不使用工程规则）
-  const complexityAnalysis = await analyzeTaskComplexity(content, attachmentIds)
+  // 使用预计算的复杂度分析，或重新分析
+  const complexityAnalysis = precomputedAnalysis || await analyzeTaskComplexity(content, attachmentIds)
+
+  console.log('[Secretary] Task complexity:', complexityAnalysis)
 
   // 2. 如果是复杂任务，先进行任务规划
   if (complexityAnalysis.needsPlanning) {
