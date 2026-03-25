@@ -4,6 +4,9 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Chat from './pages/Chat'
 import ChatSession from './pages/ChatSession'
+import AgentManagement from './pages/admin/AgentManagement'
+import SkillManagement from './pages/admin/SkillManagement'
+import AgentSkillBinding from './pages/admin/AgentSkillBinding'
 
 // 简单的认证状态管理
 function App() {
@@ -73,6 +76,15 @@ function App() {
         } />
         <Route path="/chat/:sessionId" element={
           isAuthenticated ? <ChatSession onLogout={handleLogout} /> : <Navigate to="/login" replace />
+        } />
+        <Route path="/admin/agents" element={
+          isAuthenticated ? <AgentManagement /> : <Navigate to="/login" replace />
+        } />
+        <Route path="/admin/agents/:agentId/skills" element={
+          isAuthenticated ? <AgentSkillBinding /> : <Navigate to="/login" replace />
+        } />
+        <Route path="/admin/skills" element={
+          isAuthenticated ? <SkillManagement /> : <Navigate to="/login" replace />
         } />
       </Routes>
     </BrowserRouter>

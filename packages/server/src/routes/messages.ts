@@ -112,7 +112,12 @@ router.post('/sessions/:sessionId/messages', authMiddleware, async (req: AuthReq
     // 触发 Secretary 处理消息
     setTimeout(async () => {
       try {
-        await processUserMessage(req.params.sessionId, message.id, data.content)
+        await processUserMessage(
+          req.params.sessionId,
+          message.id,
+          data.content,
+          data.attachmentIds || []
+        )
       } catch (err) {
         console.error('Error processing message:', err)
       }

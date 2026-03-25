@@ -1,6 +1,7 @@
 import prisma from '../../config/database'
 import { analyzeInput, InputClassification, ComplexityAssessment } from '../classifier'
 import { generateCompletion, generateCompletionStream, LLMMessage } from '../../services/llm'
+import { readFileById, listSessionAttachmentsTool, executeTool } from '../../services/file-tool'
 import { io } from '../../index'
 
 // Secretary 系统提示词
@@ -49,7 +50,8 @@ const EXECUTION_TEMPLATE = `
 export async function processUserMessage(
   sessionId: string,
   userMessageId: string,
-  content: string
+  content: string,
+  attachmentIds: string[] = []
 ) {
   // 1. 分析输入
   const analysis = analyzeInput(content)
@@ -63,32 +65,57 @@ export async function processUserMessage(
     }
   })
 
-  // 3. 记录上下文
+  // 3. 如果有附件，先读取附件内容
+  let attachmentContents: string[] = []
+  if (attachmentIds.length > 0) {
+    for (const attachmentId of attachmentIds) {
+      const fileContent = await readFileById(attachmentId)
+      attachmentContents.push(fileContent)
+      // 记录附件读取
+      await prisma.contextHistory.create({
+        data: {
+          sessionId,
+          agentId: 'SECRETARY',
+          action: 'read_attachment',
+          input: attachmentId,
+          output: fileContent.slice(0, 500) // 限制记录长度
+        }
+      })
+    }
+  }
+
+  // 4. 构建上下文（包含附件内容）
+  let fullContent = content
+  if (attachmentContents.length > 0) {
+    fullContent = `${content}\n\n--- 附件内容 ---\n${attachmentContents.join('\n\n---\n')}`
+  }
+
+  // 5. 记录上下文
   await prisma.contextHistory.create({
     data: {
       sessionId,
       agentId: 'SECRETARY',
       action: 'analyze_input',
-      input: content,
-      output: JSON.stringify({ classification: analysis.classification, complexity: analysis.complexity })
+      input: fullContent,
+      output: JSON.stringify({ classification: analysis.classification, complexity: analysis.complexity, attachments: attachmentIds })
     }
   })
 
-  // 4. 根据分类类型处理
+  // 6. 根据分类类型处理
   let responseContent: string
 
   switch (analysis.classification.type) {
     case 'QUESTION':
-      responseContent = await handleQuestion(content)
+      responseContent = await handleQuestion(fullContent, attachmentIds)
       break
     case 'REQUIREMENT':
-      responseContent = await handleRequirement(content, analysis)
+      responseContent = await handleRequirement(fullContent, analysis, attachmentIds)
       break
     case 'EXECUTION':
-      responseContent = await handleExecution(content, analysis, sessionId, userMessageId)
+      responseContent = await handleExecution(fullContent, analysis, sessionId, userMessageId, attachmentIds)
       break
     default:
-      responseContent = await handleDirect(content)
+      responseContent = await handleDirect(fullContent)
   }
 
   // 5. 创建 Assistant 消息
@@ -111,7 +138,7 @@ export async function processUserMessage(
 /**
  * 处理问题类请求 - 直接用 LLM 回答
  */
-async function handleQuestion(content: string): Promise<string> {
+async function handleQuestion(content: string, attachmentIds: string[] = []): Promise<string> {
   const messages: LLMMessage[] = [
     { role: 'user', content }
   ]
@@ -135,7 +162,8 @@ async function handleQuestion(content: string): Promise<string> {
  */
 async function handleRequirement(
   content: string,
-  analysis: { classification: InputClassification; complexity: ComplexityAssessment }
+  analysis: { classification: InputClassification; complexity: ComplexityAssessment },
+  attachmentIds: string[] = []
 ): Promise<string> {
   const messages: LLMMessage[] = [
     { role: 'user', content: `用户需求：${content}\n\n复杂度：${analysis.complexity.level}\n\n请确认需求并给出执行计划。` }
@@ -160,7 +188,8 @@ async function handleExecution(
   content: string,
   analysis: { classification: InputClassification; complexity: ComplexityAssessment },
   sessionId: string,
-  messageId: string
+  messageId: string,
+  attachmentIds: string[] = []
 ): Promise<string> {
   // 1. 创建任务
   const task = await prisma.task.create({
@@ -186,8 +215,8 @@ async function handleExecution(
   // 3. 返回任务创建消息给用户
   const initialMessage = `好的，我已收到您的任务需求，正在开始执行...\n\n📋 **任务**：${task.taskName}\n📊 **复杂度**：${analysis.complexity.level}\n🔄 **状态**：等待执行中`
 
-  // 4. 异步开始任务执行（不阻塞响应）
-  executeTask(task.id, content, sessionId).catch(err => {
+  // 4. 异步开始任务执行（不阻塞响应），传递附件ID
+  executeTask(task.id, content, sessionId, attachmentIds).catch(err => {
     console.error('Task execution error:', err)
   })
 
@@ -217,7 +246,7 @@ async function handleDirect(content: string): Promise<string> {
 /**
  * 执行任务 - 调度 Worker
  */
-async function executeTask(taskId: string, content: string, sessionId: string) {
+async function executeTask(taskId: string, content: string, sessionId: string, attachmentIds: string[] = []) {
   const task = await prisma.task.findUnique({ where: { id: taskId } })
   if (!task) return
 
@@ -238,7 +267,16 @@ async function executeTask(taskId: string, content: string, sessionId: string) {
     progress: 10
   })
 
-  // 3. 记录开始执行
+  // 3. 读取附件内容（如果有）
+  let attachmentContents: string[] = []
+  if (attachmentIds.length > 0) {
+    for (const attachmentId of attachmentIds) {
+      const fileContent = await readFileById(attachmentId)
+      attachmentContents.push(fileContent)
+    }
+  }
+
+  // 4. 记录开始执行
   await prisma.contextHistory.create({
     data: {
       sessionId,
@@ -246,20 +284,25 @@ async function executeTask(taskId: string, content: string, sessionId: string) {
       agentId: 'WORKER',
       action: 'task_started',
       input: content,
-      output: 'Worker 开始执行任务'
+      output: 'Worker 开始执行任务，附件数量: ' + attachmentIds.length
     }
   })
 
   try {
-    // 4. 构建 Worker 执行提示
+    // 5. 构建 Worker 执行提示（包含附件内容）
+    let fullContent = content
+    if (attachmentContents.length > 0) {
+      fullContent = `${content}\n\n--- 用户上传的附件内容 ---\n${attachmentContents.join('\n\n---\n')}`
+    }
+
     const workerMessages: LLMMessage[] = [
       {
         role: 'user',
-        content: EXECUTION_TEMPLATE.replace('{taskDescription}', content)
+        content: EXECUTION_TEMPLATE.replace('{taskDescription}', fullContent)
       }
     ]
 
-    // 5. 流式执行并收集结果
+    // 6. 流式执行并收集结果
     let fullResult = ''
     let progress = 20
 
@@ -268,7 +311,7 @@ async function executeTask(taskId: string, content: string, sessionId: string) {
       taskId,
       progress,
       status: 'executing',
-      message: '正在分析任务需求...'
+      message: '正在分析任务需求和附件...'
     })
 
     // 调用 LLM 执行
@@ -289,7 +332,7 @@ async function executeTask(taskId: string, content: string, sessionId: string) {
       })
     }
 
-    // 6. 创建工作产物
+    // 7. 创建工作产物
     await prisma.workProduct.create({
       data: {
         taskId,

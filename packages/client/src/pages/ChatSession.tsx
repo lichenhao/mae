@@ -144,7 +144,7 @@ export default function ChatSession({ onLogout }: ChatSessionProps) {
       if (res.ok) {
         // 不直接添加消息，等待 WebSocket 回调（避免重复）
         setInput('')
-        setAttachmentIds([])
+        setAttachments([])
       }
     } catch (err) {
       console.error('Failed to send message')

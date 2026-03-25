@@ -6,7 +6,14 @@
       "Bash(open http://localhost:3001)",
       "Bash(env)",
       "Read(//Users/ryota/works/MultiAgentApp/**)",
-      "Bash(kill -9 21230 33796)"
+      "Bash(kill -9 21230 33796)",
+      "Read(//private/etc/**)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(curl -v http://localhost:5173)",
+      "Bash(curl -s -X POST http://localhost:3000/api/sessions/test/attachments -H \"Authorization: Bearer test\" -F \"file=@package.json\")",
+      "Bash(psql -U postgres -d multi_agent_app -c \"SELECT column_name, data_type, character_set FROM information_schema.columns WHERE table_name = ''Attachment'' AND column_name = ''fileName'';\")",
+      "Bash(brew list:*)",
+      "Read(//private/tmp/**)"
     ]
   }
 }

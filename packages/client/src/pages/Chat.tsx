@@ -101,18 +101,35 @@ export default function Chat({ onLogout }: ChatProps) {
             <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--color-text)' }}>
               我的会话
             </h2>
-            <button
-              onClick={handleLogout}
-              style={{
-                padding: '0.375rem 0.75rem',
-                color: 'var(--color-text-secondary)',
-                fontSize: '0.75rem',
-                backgroundColor: 'var(--color-bg-hover)',
-                borderRadius: 'var(--radius-full)'
-              }}
-            >
-              登出
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <a
+                href="/admin/agents"
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  color: 'var(--color-primary)',
+                  fontSize: '0.75rem',
+                  backgroundColor: 'var(--color-primary-bg)',
+                  borderRadius: 'var(--radius-full)',
+                  textDecoration: 'none'
+                }}
+              >
+                管理
+              </a>
+              <button
+                onClick={handleLogout}
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  color: 'var(--color-text-secondary)',
+                  fontSize: '0.75rem',
+                  backgroundColor: 'var(--color-bg-hover)',
+                  borderRadius: 'var(--radius-full)',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                登出
+              </button>
+            </div>
           </div>
 
           {/* 新建对话按钮 */}

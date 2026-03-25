@@ -36,6 +36,23 @@ router.post(
         return res.status(400).json({ error: '没有文件' })
       }
 
+      // 解码文件名（前端可能进行了 URL 编码）
+      let fileName = file.originalname
+      console.log('[Upload] Raw filename:', fileName)
+
+      try {
+        // 先尝试解码 URL 编码的中文
+        fileName = decodeURIComponent(fileName)
+        console.log('[Upload] Decoded filename:', fileName)
+      } catch (e) {
+        console.log('[Upload] Decode failed, trying UTF-8 buffer...')
+        // 如果解码失败，尝试从 Buffer 解码
+        if (file.originalname) {
+          fileName = Buffer.from(file.originalname, 'latin1').toString('utf8')
+          console.log('[Upload] Buffer decoded:', fileName)
+        }
+      }
+
       // 验证会话属于当前用户
       const session = await prisma.session.findFirst({
         where: { id: sessionId, userId: req.userId }
@@ -47,7 +64,7 @@ router.post(
 
       // 上传文件
       const result = await uploadFile(sessionId, {
-        name: file.originalname,
+        name: fileName,
         type: file.mimetype,
         size: file.size,
         chunk: file.buffer

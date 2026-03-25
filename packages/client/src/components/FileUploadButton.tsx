@@ -43,8 +43,13 @@ export default function FileUploadButton({ sessionId, attachments, onUploadCompl
 
     try {
       const token = localStorage.getItem('token')
+
+      // 使用 UTF-8 编码创建 FormData
       const formData = new FormData()
-      formData.append('file', file)
+      // 使用 encodeURIComponent 确保文件名正确编码
+      const encodedFileName = encodeURIComponent(file.name)
+      const fileWithUtf8Name = new File([file], encodedFileName, { type: file.type })
+      formData.append('file', fileWithUtf8Name)
 
       const res = await fetch(`/api/sessions/${sessionId}/attachments`, {
         method: 'POST',
