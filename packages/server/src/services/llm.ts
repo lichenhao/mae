@@ -11,12 +11,26 @@ export interface LLMMessage {
   content: string
 }
 
+export interface LLMTool {
+  name: string
+  description: string
+  input_schema: {
+    type: 'object'
+    properties: Record<string, any>
+    required?: string[]
+  }
+}
+
 export interface LLMResponse {
   content: string
   usage?: {
     inputTokens: number
     outputTokens: number
   }
+  toolCalls?: Array<{
+    name: string
+    input: Record<string, any>
+  }>
 }
 
 /**

@@ -8,12 +8,14 @@ export interface InputClassification {
   suggestedAction: string
 }
 
-// 任务复杂度评估结果
+// 任务复杂度评估结果 - 简化为标记，是否复杂由 Agent 运行时判断
 export interface ComplexityAssessment {
   level: 'SIMPLE' | 'MEDIUM' | 'COMPLEX'
   reasoning: string
   estimatedSteps: number
   requiresSubtasks: boolean
+  // 标记是否需要 Agent 深入分析
+  needsAgentAnalysis: boolean
 }
 
 // 规则模式
@@ -47,7 +49,7 @@ const EXECUTION_PATTERNS = [
 ]
 
 /**
- * 快速规则判断
+ * 快速规则判断 - 仅做初步分类
  */
 function quickRuleClassify(message: string): InputClassification | null {
   const text = message.trim()
@@ -86,50 +88,18 @@ function quickRuleClassify(message: string): InputClassification | null {
 }
 
 /**
- * 复杂度评估（规则版）
+ * 复杂度评估 - 仅做初步标记，真实复杂度由 Agent 运行时判断
+ * 工程实现无法准确判断问题的真实复杂度，需要 Agent 深入分析
  */
 export function assessComplexity(message: string, inputType: string): ComplexityAssessment {
-  const text = message.trim()
-  const length = text.length
-
-  // 简单判断
-  if (inputType === 'QUESTION') {
-    // 问题类通常较简单
-    return {
-      level: 'SIMPLE',
-      reasoning: '问题类请求，通常直接回答',
-      estimatedSteps: 1,
-      requiresSubtasks: false
-    }
-  }
-
-  // 执行类根据长度和关键词判断
-  const complexKeywords = ['系统', '网站', '应用', '平台', '完整', '全面', '多个', '复杂']
-  const hasComplexKeyword = complexKeywords.some(k => text.includes(k))
-
-  if (length > 200 || hasComplexKeyword) {
-    return {
-      level: 'COMPLEX',
-      reasoning: '内容较长或包含复杂关键词',
-      estimatedSteps: 5,
-      requiresSubtasks: true
-    }
-  }
-
-  if (length > 50) {
-    return {
-      level: 'MEDIUM',
-      reasoning: '中等长度内容，可能需要多步',
-      estimatedSteps: 2,
-      requiresSubtasks: false
-    }
-  }
-
+  // 默认标记为需要 Agent 分析，真实复杂度由 Agent 执行时判断
+  // 工程规则只能做初步判断，无法准确评估
   return {
-    level: 'SIMPLE',
-    reasoning: '简短明确的请求',
+    level: 'MEDIUM', // 默认中等，让 Agent 运行时判断
+    reasoning: '初步标记，需 Agent 执行时深入分析真实复杂度',
     estimatedSteps: 1,
-    requiresSubtasks: false
+    requiresSubtasks: false,
+    needsAgentAnalysis: true // 标记需要 Agent 深入分析
   }
 }
 

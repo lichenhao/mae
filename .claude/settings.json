@@ -13,7 +13,11 @@
       "Bash(curl -s -X POST http://localhost:3000/api/sessions/test/attachments -H \"Authorization: Bearer test\" -F \"file=@package.json\")",
       "Bash(psql -U postgres -d multi_agent_app -c \"SELECT column_name, data_type, character_set FROM information_schema.columns WHERE table_name = ''Attachment'' AND column_name = ''fileName'';\")",
       "Bash(brew list:*)",
-      "Read(//private/tmp/**)"
+      "Read(//private/tmp/**)",
+      "Bash(npx tsc:*)",
+      "Bash(pkill -f \"node.*dist\")",
+      "Bash(ps -p 38545 -o args=)",
+      "Bash(curl -s http://localhost:3000/api/health)"
     ]
   }
 }
